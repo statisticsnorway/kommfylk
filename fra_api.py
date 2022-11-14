@@ -1,25 +1,29 @@
 import pandas as pd
 
 
-
 # Lager liste over kommuner for et gitt aar (eller året vi er i hvis år ikke oppgis).
-# med navn=True returnerer DataFrame med kolonnene 'NAVN' og 'KOMMUNENR'.
+# navn=True returnerer pandas.DataFrame med kolonnene 'NAVN' og 'KOMMUNENR'.
 def kommuner_fra_api(aar=None, 
                      navn=False,
-                     utvalg=None, # antall kommuner hvis man vil ha et tilfeldig utvalg
+                     utvalg=None, # antall kommuner, hvis man vil ha et tilfeldig utvalg
                      ):
 
     if aar is None:
         import datetime
         aar = str(datetime.datetime.now().year)
      
-    URL = 'http://data.ssb.no/api/klass/v1/classifications/131/codesAt.json?date='+str(aar)+'-01-01'
+    URL = 'https://data.ssb.no/api/klass/v1/classifications/131/codesAt.json?date='+str(aar)+'-01-01'
    
     # Siden dette er json kan vi bruke Pandas.read_json(). Den kan ta nettadresser direkte.
-    df = pd.read_json(URL)
-        
-    kommuner = pd.json_normalize(df['codes'])
+    try:
+        df = pd.read_json(URL)
+        kommuner = pd.json_normalize(df['codes'])
+    except:
+        raise ValueError(f"Får ikke lest api-en for {aar}")
 
+    if len(kommuner)==0:
+        raise ValueError(f"Finner ikke kommuner for {aar}")
+    
     if navn:
         out = pd.DataFrame(data = {'KOMMUNENR':list(kommuner.code), 'NAVN':list(kommuner.name)})
         out = out[out["KOMMUNENR"].str.contains("9999") == False]
@@ -41,23 +45,33 @@ def kommuner_fra_api(aar=None,
 
             
 # Lager liste over fylker for et gitt aar (eller året vi er i hvis år ikke oppgis).
-# med navn=True returnerer pd.dataframe med kolonnene 'NAVN' og 'FYLKE'.
-def fylker_fra_api(aar=None, navn=False, utvalg=None):
+# navn=True returnerer pandas.DataFrame med kolonnene 'NAVN' og 'FYLKE'.
+def fylker_fra_api(aar=None, 
+                   navn=False, 
+                   utvalg=None,  # antall fylker, hvis man vil ha et tilfeldig utvalg
+                   samisk=True):
         
     if aar is None:
         import datetime
         aar = str(datetime.datetime.now().year)
 
-    URL = 'http://data.ssb.no/api/klass/v1/classifications/104/codesAt.json?date='+str(aar)+'-01-01'
+    URL = 'https://data.ssb.no/api/klass/v1/classifications/104/codesAt.json?date='+str(aar)+'-01-01'
 
-    df = pd.read_json(URL)
-
-    fylker = pd.json_normalize(df['codes'])
-
+    try:
+        df = pd.read_json(URL)
+        fylker = pd.json_normalize(df['codes'])
+    except:
+        raise ValueError(f"Får ikke lest api-en for {aar}")
+    
+    if len(fylker)==0:
+        raise ValueError(f"Finner ikke fylker for {aar}")
+    
     if navn:
         out = pd.DataFrame(data = {'FYLKE':list(fylker.code), 'NAVN':list(fylker.name)})
-        out = out[out["FYLKE"].str.contains("99") == False]
-                       
+        out = out[out["FYLKE"].str.contains("99") == False]             
+        if not samisk:
+            out["NAVN"] = out["NAVN"].map(lambda x: x.split(" - ")[0].strip(" "))
+
     else:
         out = list(fylker.code.unique())
         out.sort()
@@ -70,278 +84,280 @@ def fylker_fra_api(aar=None, navn=False, utvalg=None):
         else:
             import random
             out = random.sample(out, utvalg)
-
+        
     return out
 
 
-
-# returnerer kommunenavn hvis man oppgir kommunenummer (f.eks. returneres "Oslo" hvis man skriver 'kommunenavn("0301")' )
-# returnerer kommuneordbok (dict) hvis man ikke spesifiserer kommune. Da kan man skrive kommdict = kommunenavn(), så 'kommdict["0301"]' for å få 'Oslo'
-# returnerer liste med kommunenavn hvis man oppgir liste med kommunenumre
-def kommunenavn(kommune=None, 
+# returnerer kommunenavn som string, liste, pandas-kolonne eller ordbok, avhengig av hva som er input
+def kommunenavn(kommune=None, # kommunenummer som string, tall, liste eller pandas-kolonne
                 aar=None):
 
-    if aar is None:
-        import datetime
-        aar2 = str(datetime.datetime.now().year)
-    else:
-        aar2 = aar
-    
-    kommuner = kommuner_fra_api(aar2, navn=True)
-    
+    """
+    kommunenavn() -> ordbok der kommunenumrene er keys og navnene values
+    kommunenavn('0301') -> 'Oslo'
+    kommunenavn(['3001', 101.0]) -> ['Halden', 'Halden'] 
+    kommunenavn(['3001', 101.0], aar=2022) -> ValueError siden '0101' ikke finnes i 2022
+    df.FYLKE.kommunenavn() -> pandas-kolonne med kommunenavn
+    """
+
+    kommuner = kommuner_fra_api(aar, navn=True)
     kommuneordbok = {kommnr: kommnavn for kommnr, kommnavn in zip(kommuner.KOMMUNENR, kommuner.NAVN)}
     
     if kommune is None:
         return kommuneordbok
-
-    if isinstance(kommune, float):
-        kommune = int(kommune)
+    
+    # lager en funksjon for å ikke gjenta for hver type
+    def finn_kommnavn(kommune, kommuneordbok, aar):
         
-    # hvis bare én kommune, returner kommunenumret fra ordboka
-    if isinstance(kommune, str) or isinstance(kommune, int):
+        kommune = str(int(kommune)).zfill(4)       
         
-        if aar is not None:
-            return kommuneordbok[str(kommune).zfill(4)]
-
-        # hvis ikke kommunenumret finnes i kommuneordboka, let gjennom tidligere år fram til man finner den
-        while not kommune in kommuneordbok:
+        if aar is None:
+            import datetime
+            aar2 = str(datetime.datetime.now().year)
+        else:
+            aar2 = aar
+            
+        # let etter kommunen ett år av gangen
+        while True:
+            
+            if kommune in kommuneordbok:
+                return kommuneordbok[kommune]
+            
+            if aar is not None:
+                raise ValueError(f"Fant ikke kommunen '{kommune}' i {aar}")
+            
             aar2 = int(aar2)-1
+            
             try:
                 kommuner = kommuner_fra_api(aar2, navn=True)
             except Exception:
                 raise ValueError("Finner ikke kommunenumret du oppga")
+            
             kommuneordbok = {kommnr: kommnavn for kommnr, kommnavn in zip(kommuner.KOMMUNENR, kommuner.NAVN)}
-        return kommuneordbok[str(kommune).zfill(4)]
+            
+    if isinstance(kommune, pd.Series):
+        return kommune.map(lambda x: finn_kommnavn(x, kommuneordbok, aar))
+    
+    if isinstance(kommune, str) or isinstance(kommune, int):
+        return finn_kommnavn(kommune, kommuneordbok, aar)
 
-    # hvis man oppgir liste med kommunenumre, returner liste med kommunenavn
-    # hvis ikke år er oppgitt, let tilbake til man finner alle kommunenumrene
-    if isinstance(kommune, list):
-        
-        kommune = [str(int(k)).zfill(4) for k in kommune]
-        
-        if aar is not None:
-            return [kommuneordbok[k] for k in kommune]
-        if all([i in kommuneordbok for i in kommune]):
-            return [kommuneordbok[k] for k in kommune]
-        while True:
-            aar2 = int(aar2)-1
-            try:
-                kommuner = kommuner_fra_api(aar2, navn=True)
-            except Exception:
-                raise ValueError("Finner ikke alle kommunenumrene du oppga")
-            kommuneordbok = {kommnr: kommnavn for kommnr, kommnavn in zip(kommuner.KOMMUNENR, kommuner.NAVN)}
-            if all([i in kommuneordbok for i in kommune]):
-                return [kommuneordbok[k] for k in kommune]
-
-
-
-# returnerer fylkesnavn hvis man oppgir kommune- eller fylkesnummer (f.eks. returneres "Oslo" hvis man skriver 'fylkesnavn("0301")' )
-# returnerer fylkesordbok (dict) hvis man ikke spesifiserer kommune/fylke. Da kan man skrive fylkdict = fylkesnavn(), så 'fylkdict["03"]' for å få 'Oslo'
-def fylkesnavn(fylke=None, aar = None, samisk=False):
-
-    if aar is None:
-        import datetime
-        aar2 = str(datetime.datetime.now().year)
+    elif isinstance(kommune, list) or isinstance(kommune, tuple):
+        kommune = [str(int(k)).zfill(4) for k in kommune]        
+        return [finn_kommnavn(k, kommuneordbok, aar) for k in kommune]
+    
     else:
-        aar2 = aar
+        raise ValueError("'kommune' må være str, int, float, liste, tuple eller pd.Series")
+
+
+# konverterer fra kommunenavn inni funksjonen fylkesnavn()
+def kommnavn_til_fylknavn(aar=None, samisk=False):
+    kommuner = kommuner_fra_api(aar, navn=True)
+    fylker = fylker_fra_api(aar, navn=True, samisk=samisk).set_index("FYLKE")
+    fylkesnavn = kommuner.KOMMUNENR.str[:2].map(fylker.NAVN)
+    return {kommnavn: fylknavn for kommnavn, fylknavn in zip(kommuner.NAVN, fylkesnavn)}
+
+
+# returnerer fylkesnavn som string, liste, pandas-kolonne eller ordbok, avhengig av hva som er input
+def fylkesnavn(fylke=None, # fylkesnummer (evt. kommunenr) som string, tall, liste eller pandas-kolonne
+               aar = None, 
+               samisk=False):
+
+    """
+    fylkesnavn() -> ordbok der fylkesnumrene er keys og navnene values
+    fylkesnavn('03') -> 'Oslo'
+    fylkesnavn(['0101', '3001']) -> ['Østfold', 'Viken'] 
+    fylkesnavn(['0101', '3001'], aar=2022) -> ValueError siden 0101 ikke finnes i 2022
+    df.FYLKE.fylkesnavn() -> pandas-kolonne med fylkesnavn
+    """
     
-    fylker = fylker_fra_api(aar2, navn=True)
-    
-    # funksjon som lager kommuneordbok med eller uten samiske navn
-    def fylkesdict(fylker, samisk):
-        if samisk:
-            return {fylknr: fylknavn for fylknr, fylknavn in zip(fylker.FYLKE, fylker.NAVN)}
-        return {fylknr: fylknavn.split("-")[0].strip(" ") for fylknr, fylknavn in zip(fylker.FYLKE, fylker.NAVN)}
-    
-    fylkesordbok = fylkesdict(fylker, samisk)
+    fylker = fylker_fra_api(aar, navn=True, samisk=samisk)
+    fylkesordbok = {fylknr: fylknavn for fylknr, fylknavn in zip(fylker.FYLKE, fylker.NAVN)}
     
     if fylke is None:
         return fylkesordbok
     
-    if isinstance(fylke, float):
-        fylke = int(fylke)
-    
-    # hvis man oppgir kommunenr
-    def komm_til_fylk(aar):
-        kommuner = kommuner_fra_api(aar, navn=True)
-        kommuner["FYLKE"] = kommuner.KOMMUNENR.str[:2]
-        return {kommnavn: fylknr for fylknr, kommnavn in zip(kommuner.FYLKE, kommuner.NAVN)}
-    
-    # hvis bare ett fylke, returner fylkesnumret fra ordboka
-    if isinstance(fylke, str) or isinstance(fylke, int):
+    # lager en funksjon for å ikke gjenta for hver type
+    def finn_fylknavn(fylke, fylkesordbok, aar):
         
-        if str(fylke).capitalize() in komm_til_fylk(aar2):
-            return komm_til_fylk(aar2)[fylke]
+        if aar is None:
+            import datetime
+            aar2 = str(datetime.datetime.now().year)
+        else:
+            aar2 = aar
+        
+        if isinstance(fylke, float):
+            fylke = int(fylke)
+                
+        # let etter fylket ett år av gangen
+        while True:
+                
+            if fylke in fylkesordbok:
+                return fylkesordbok[fylke]
             
-        fylke = str(fylke)[:2].zfill(2)
+            # hvis feil format (tall og ikke ledende 0)
+            if len(str(fylke))<=2:
+                try:
+                    fylknr = str(int(fylke)).zfill(2)
+                    if fylknr in fylkesordbok:
+                        return fylkesordbok[fylknr]
+                except ValueError:
+                    pass
+                
+            # hvis man oppgir kommunenr
+            if len(str(fylke))==3 or len(str(fylke))==4:
+                try:
+                    fylknr = str(int(fylke)).zfill(4)[:2]
+                    if fylknr in fylkesordbok:
+                        return fylkesordbok[fylknr]
+                except ValueError:
+                    pass
+            
+            # hvis man oppgir kommunenavn
+            if str(fylke).capitalize() in kommnavn_til_fylknavn(aar, samisk):
+                return kommnavn_til_fylknavn(aar, samisk)[str(fylke).capitalize()]
+            
+            if aar is not None:
+                raise ValueError(f"Fant ikke fylket '{fylke}' i {aar}")
         
-        if aar is not None:
-            return fylkesordbok[fylke]
-
-        # hvis ikke fylkesnumret finnes i fylkesordboka, let gjennom tidligere år fram til man finner det
-        while not fylke in fylkesordbok:
             aar2 = int(aar2)-1
+            
             try:
                 fylker = fylker_fra_api(aar2, navn=True)
             except Exception:
                 raise ValueError("Finner ikke fylkesnumret du oppga")
-            fylkesordbok = fylkesdict(fylker, samisk)
             
-            if str(fylke).capitalize() in komm_til_fylk(aar2):
-                return komm_til_fylk(aar2)[fylke]
+            fylkesordbok = {fylknr: fylknavn.split(" - ")[0].strip(" ") for fylknr, fylknavn in zip(fylker.FYLKE, fylker.NAVN)}
+                                 
+     
+    if isinstance(fylke, pd.Series):
+        return fylke.map(lambda x: finn_fylknavn(x, fylkesordbok, aar))
+       
+    if isinstance(fylke, str) or isinstance(fylke, int):
+        return finn_fylknavn(fylke, fylkesordbok, aar)
         
-        return fylkesordbok[fylke]
-
-    # hvis man oppgir flere fylkenumre, returner liste med fylkesnavn
-    # hvis ikke år er oppgitt, let tilbake til man finner alle fylkenumrene
-    if isinstance(fylke, list) or isinstance(fylke, tuple):
-        
-        fylke = [str(f)[:2].zfill(2) for f in fylke]
-        
-        if aar is not None or all([f in fylkesordbok for f in fylke]):
-            return [fylkesordbok[f] for f in fylke]
-        
-        # let etter fylkesnumrene så langt api-en rekker
-        while True:
-            aar2 = int(aar2)-1
-            try:
-                fylker = fylker_fra_api(aar2, navn=True)
-            except Exception:
-                raise ValueError("Finner ikke alle fylkenumrene du oppga")
-            fylkesordbok = fylkesdict(fylker, samisk)
-            if all([f in fylkesordbok for f in fylke]):
-                return [fylkesordbok[f] for f in fylke]
-
-
-
-def kommunenummer(kommune=None, 
-                aar=None):
-
-    if aar is None:
-        import datetime
-        aar2 = str(datetime.datetime.now().year)
-    else:
-        aar2 = aar
+    elif isinstance(fylke, list) or isinstance(fylke, tuple):
+        return [finn_fylknavn(f, fylkesordbok, aar) for f in fylke]
     
-    kommuner = kommuner_fra_api(aar2, navn=True)
+    else:
+        raise ValueError("'fylke' må være str, int, float, liste, tuple eller pd.Series")
+
+
+# returnerer kommunenummer som string, liste eller ordbok, avhengig av hva som er input
+def kommunenummer(kommune=None, # kommunenavn som string, tall, liste eller tuple
+           aar = None):
+
+    """
+    kommunenummer() -> ordbok der kommunenavnene er keys og numrene values
+    kommunenummer('oslo') -> '0301'
+    kommunenummer(["andebu", "sandefjord"]) -> ['0719', '3804']
+    kommunenummer(["andebu", "sandefjord"], 2022) -> ValueError siden Andebu ikke finnes i 2022
+    """
+    
+    kommuner = kommuner_fra_api(aar, navn=True)
     
     kommuneordbok = {kommnavn: kommnr for kommnr, kommnavn in zip(kommuner.KOMMUNENR, kommuner.NAVN)}
     
     if kommune is None:
         return kommuneordbok
-        
-    # hvis bare én kommune, returner kommunenumret fra ordboka
-    if isinstance(kommune, str):
+    
+    # lager en funksjon for å ikke gjenta for hver type
+    def finn_kommnr(kommune, kommuneordbok, aar):
         
         kommune = kommune.capitalize()
         
-        if aar is not None:
-            return kommuneordbok[kommune]
+        if aar is None:
+            import datetime
+            aar2 = str(datetime.datetime.now().year)
+        else:
+            aar2 = aar
 
-        # hvis ikke kommunenumret finnes i kommuneordboka, let gjennom tidligere år fram til man finner den
-        while not kommune in kommuneordbok:
+        # let etter kommunen ett år av gangen
+        while True:
+        
+            if kommune in kommuneordbok:
+                return kommuneordbok[kommune]
+
+            if aar is not None:
+                raise ValueError(f"Fant ikke kommunen '{kommune}' i {aar}")
+            
             aar2 = int(aar2)-1
+            
             try:
                 kommuner = kommuner_fra_api(aar2, navn=True)
             except Exception:
                 raise ValueError("Finner ikke kommunenumret du oppga")
+            
             kommuneordbok = {kommnavn: kommnr for kommnr, kommnavn in zip(kommuner.KOMMUNENR, kommuner.NAVN)}
-        return kommuneordbok[kommune]
+            
+    if isinstance(kommune, str):        
+        return finn_kommnr(kommune, kommuneordbok, aar)
 
-    # hvis man oppgir liste med kommunenumre, returner liste med kommunenavn
-    # hvis ikke år er oppgitt, let tilbake til man finner alle kommunenumrene
-    if isinstance(kommune, list):
-        
-        kommune = [k.capitalize() for k in kommune]
-
-        if aar is not None:
-            return [kommuneordbok[k] for k in kommune]
-        if all([i in kommuneordbok for i in kommune]):
-            return [kommuneordbok[k] for k in kommune]
-        while True:
-            aar2 = int(aar2)-1
-            try:
-                kommuner = kommuner_fra_api(aar2, navn=True)
-            except Exception:
-                raise ValueError("Finner ikke alle kommunenumrene du oppga")
-            kommuneordbok = {kommnavn: kommnr for kommnr, kommnavn in zip(kommuner.KOMMUNENR, kommuner.NAVN)}
-            if all([i in kommuneordbok for i in kommune]):
-                return [kommuneordbok[k] for k in kommune]
-
-
-
-def fylkesnummer(fylke=None, 
-                aar=None):
+    elif isinstance(kommune, list) or isinstance(kommune, tuple):
+        return [finn_kommnr(k, kommuneordbok, aar) for k in kommune]
     
-    if aar is None:
-        import datetime
-        aar2 = str(datetime.datetime.now().year)
     else:
-        aar2 = aar
+        raise ValueError("'kommune' må være str, liste, tuple eller pd.Series")
 
-    fylker = fylker_fra_api(aar, navn=True)
+
+# returnerer fylkesnummer som string, liste eller ordbok, avhengig av hva som er input
+def fylkesnummer(fylke=None, # fylkesnavn som string, tall, liste eller tuple
+                 aar = None, 
+                 samisk=False):
+
+    """
+    fylkesnummer() -> ordbok der fylkesnavnene er keys og numrene values
+    fylkesnummer('Oslo') -> '03'
+    fylkesnummer(["andebu", "sandefjord"]) -> ['07', '38']
+    fylkesnummer(["andebu", "sandefjord"], 2022) -> ValueError siden Andebu ikke finnes i 2022
+    """
+
+    fylker = fylker_fra_api(aar, navn=True, samisk=samisk)
     fylkesordbok = {fylknavn: fylknr for fylknr, fylknavn in zip(fylker.FYLKE, fylker.NAVN)}
     
     if fylke is None:
         return fylkesordbok
     
-    # hvis bare ett fylke, returner fylkenumret fra ordboka
-    if isinstance(fylke, str):
+    # lager en funksjon for å ikke gjenta for hver type
+    def finn_fylknr(fylke, fylkesordbok, aar):
         
         fylke = fylke.capitalize()
-        
-        if aar is not None:
-            if fylke in fylkesordbok:
-                return fylkesordbok[fylke]
-            if fylke in kommunenummer(aar=aar2):
-                return kommunenummer(fylke, aar2)[:2]
 
-        # hvis ikke fylkenumret finnes i fylkesordboka, let gjennom tidligere år fram til man finner den
-        while not fylke in fylkesordbok:
-            
-            if fylke in fylkesordbok:
-                return fylkesordbok[fylke]
-            
-            if fylke in kommunenummer(aar=aar2):
-                return kommunenummer(fylke, aar2)[:2]
-                   
-            aar2 = int(aar2)-1
-            
-            try:
-                fylker = fylker_fra_api(aar2, navn=True)
-            except Exception:
-                raise ValueError("Finner ikke fylkenumret du oppga")
-            
-            fylkesordbok = {fylknavn: fylknr for fylknr, fylknavn in zip(fylker.FYLKE, fylker.NAVN)}
-            
+        if aar is None:
+            import datetime
+            aar2 = str(datetime.datetime.now().year) 
+        else:
+            aar2 = aar 
 
-    # hvis man oppgir liste med fylkesnumre, returner liste med fylkenavn
-    # hvis ikke år er oppgitt, let tilbake til man finner alle fylkenumrene
-    if isinstance(fylke, list):
-        
-        fylke = [f.capitalize() for f in fylke]
-        
-        if aar is not None:
-            if all([f in fylkesordbok for f in fylke]):
-                return [fylkesordbok[f] for f in fylke]
-            elif all([f in kommunenummer(aar=aar2) for f in fylke]):
-                return [kommunenummer(f, aar2)[:2] for f in fylke]
-        
+        # let etter fylket ett år av gangen
         while True:
             
-            if all([f in fylkesordbok for f in fylke]):
-                return [fylkesordbok[f] for f in fylke]
+            if fylke in fylkesordbok:
+                return fylkesordbok[fylke]
             
-            if all([f in kommunenummer(aar=aar2) for f in fylke]):
-                return [kommunenummer(f, aar2)[:2] for f in fylke]
-            
+            # hvis man har oppgitt kommunenavn
+            try:
+                if fylke in kommunenummer(aar=aar2):
+                    return kommunenummer(fylke, aar2)[:2]
+            except Exception:
+                raise ValueError(f"Finner ikke fylket '{fylke}'")
+
+            if aar is not None:
+                raise ValueError(f"Finner ikke fylket '{fylke}' i {aar}")
+
             aar2 = int(aar2)-1
             
             try:
-                fylker = fylker_fra_api(aar2, navn=True)
+                fylker = fylker_fra_api(aar2, navn=True, samisk=samisk)
             except Exception:
-                raise ValueError("Finner ikke alle fylkenumrene du oppga")
+                raise ValueError(f"Finner ikke fylket '{fylke}'")
             
-            fylkesordbok = {fylknavn: fylknr for fylknr, fylknavn in zip(fylker.FYLKE, fylker.NAVN)}
-
-            
+            fylkesordbok = {fylknavn: fylknr for fylknr, fylknavn in zip(fylker.FYLKE, fylker.NAVN)}       
+    
+    if isinstance(fylke, str):
+        return finn_fylknr(fylke, fylkesordbok, aar)
+    
+    elif isinstance(fylke, list) or isinstance(fylke, tuple):
+        return [finn_fylknr(f, fylkesordbok, aar) for f in fylke]
+    
+    else:
+        raise ValueError("'fylke' må være str, liste, tuple eller pd.Series")
