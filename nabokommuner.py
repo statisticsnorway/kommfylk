@@ -10,10 +10,14 @@ def les_geoparquet(sti):
 
 
 # lager ordbok (dict) der f.eks. nabodict["0301"] gir en liste over Oslos nabokommuner
-# returnerer liste med nabokommuner (kommunenumre) for en gitt kommune. f.eks. gir nabokommuner("0301") en liste over Oslos nabokommuner
-
+# hvis kommune er spesifisert, returneres liste med nabokommuner
 def nabokommuner(kommune=None, 
                  aar=None):
+    
+    """
+    nabokommuner("0301", 2017) -> ['0213', '0229', '0217', '0219', '0605', '0230', '0231', '0233', '0533']
+    nabokommuner() -> ordbok der kommunenumrene er keys og nabokommunene values (kommuner fra året vi er i)
+    """
     
     if aar is None:
         import datetime
@@ -25,18 +29,18 @@ def nabokommuner(kommune=None,
         
         #spatial join mellom kommunen og alle andre andre kommuner
         kommunen = abas.loc[abas.KOMMUNENR == kommune, ["geometry"]]
-        andre_kommuner = abas[abas.KOMMUNENR != kommune]
+        andre_kommuner = abas.loc[abas.KOMMUNENR != kommune, ["KOMMUNENR", "geometry"]]
         joinet = kommunen.sjoin(andre_kommuner)
         
         return list(joinet.KOMMUNENR.unique())
 
-    #lag nabodict
+    # hvis ikke kommune er oppgitt, lag ordbok med kommunene som keys og naboene som values
     nabodict = {}
     for kommune in abas.sort_values("KOMMUNENR").KOMMUNENR:
             
         #spatial join mellom kommunen og alle andre andre kommuner
         kommunen = abas.loc[abas.KOMMUNENR == kommune, ["geometry"]]
-        andre_kommuner = abas[abas.KOMMUNENR != kommune]
+        andre_kommuner = abas.loc[abas.KOMMUNENR != kommune, ["KOMMUNENR", "geometry"]]
         joinet = kommunen.sjoin(andre_kommuner)
 
         # gjør liste over unike kommunenumre til value og kommunen til key
