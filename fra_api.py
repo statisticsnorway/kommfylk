@@ -1,20 +1,21 @@
 import pandas as pd
 
 
-# Lager liste over kommuner for et gitt aar (eller året vi er i hvis år ikke oppgis).
-# navn=True returnerer pandas.DataFrame med kolonnene 'NAVN' og 'KOMMUNENR'.
 def kommuner_fra_api(aar=None, 
                      navn=False,
                      utvalg=None, # antall kommuner, hvis man vil ha et tilfeldig utvalg
                      ):
-
+    """
+    Lager liste over kommuner for et gitt aar (eller året vi er i hvis år ikke oppgis).
+    navn=True returnerer pandas.DataFrame med kolonnene 'NAVN' og 'KOMMUNENR'.
+    """
+    
     if aar is None:
         import datetime
         aar = str(datetime.datetime.now().year)
      
     URL = 'https://data.ssb.no/api/klass/v1/classifications/131/codesAt.json?date='+str(aar)+'-01-01'
    
-    # Siden dette er json kan vi bruke Pandas.read_json(). Den kan ta nettadresser direkte.
     try:
         df = pd.read_json(URL)
         kommuner = pd.json_normalize(df['codes'])
@@ -88,11 +89,11 @@ def fylker_fra_api(aar=None,
     return out
 
 
-# returnerer kommunenavn som string, liste, pandas-kolonne eller ordbok, avhengig av hva som er input
-def kommunenavn(kommune=None, # kommunenummer som string, tall, liste eller pandas-kolonne
+def kommunenavn(kommune=None,
                 aar=None):
 
     """
+    Returnerer kommunenavn som string, liste, pandas-kolonne eller ordbok, avhengig av hva som er input.
     kommunenavn() -> ordbok der kommunenumrene er keys og navnene values
     kommunenavn('0301') -> 'Oslo'
     kommunenavn(['3001', 101.0]) -> ['Halden', 'Halden'] 
@@ -101,12 +102,13 @@ def kommunenavn(kommune=None, # kommunenummer som string, tall, liste eller pand
     """
 
     kommuner = kommuner_fra_api(aar, navn=True)
+    
     kommuneordbok = {kommnr: kommnavn for kommnr, kommnavn in zip(kommuner.KOMMUNENR, kommuner.NAVN)}
     
     if kommune is None:
         return kommuneordbok
     
-    # lager en funksjon for å ikke gjenta for hver type
+    # lager funksjon for å ikke gjenta for hver type
     def finn_kommnavn(kommune, kommuneordbok, aar):
         
         kommune = str(int(kommune)).zfill(4)       
@@ -134,35 +136,34 @@ def kommunenavn(kommune=None, # kommunenummer som string, tall, liste eller pand
                 raise ValueError("Finner ikke kommunenumret du oppga")
             
             kommuneordbok = {kommnr: kommnavn for kommnr, kommnavn in zip(kommuner.KOMMUNENR, kommuner.NAVN)}
-            
-    if isinstance(kommune, pd.Series):
-        return kommune.map(lambda x: finn_kommnavn(x, kommuneordbok, aar))
     
     if isinstance(kommune, str) or isinstance(kommune, int):
         return finn_kommnavn(kommune, kommuneordbok, aar)
-
+    
+    elif isinstance(kommune, pd.Series):
+        return kommune.map(lambda x: finn_kommnavn(x, kommuneordbok, aar))
+    
     elif isinstance(kommune, list) or isinstance(kommune, tuple):
-        kommune = [str(int(k)).zfill(4) for k in kommune]        
         return [finn_kommnavn(k, kommuneordbok, aar) for k in kommune]
     
     else:
         raise ValueError("'kommune' må være str, int, float, liste, tuple eller pd.Series")
 
 
-# konverterer fra kommunenavn inni funksjonen fylkesnavn()
 def kommnavn_til_fylknavn(aar=None, samisk=False):
+    """ konverterer fra kommunenavn inni fylkesnavn() """
     kommuner = kommuner_fra_api(aar, navn=True)
     fylker = fylker_fra_api(aar, navn=True, samisk=samisk).set_index("FYLKE")
     fylkesnavn = kommuner.KOMMUNENR.str[:2].map(fylker.NAVN)
     return {kommnavn: fylknavn for kommnavn, fylknavn in zip(kommuner.NAVN, fylkesnavn)}
 
 
-# returnerer fylkesnavn som string, liste, pandas-kolonne eller ordbok, avhengig av hva som er input
 def fylkesnavn(fylke=None, # fylkesnummer (evt. kommunenr) som string, tall, liste eller pandas-kolonne
                aar = None, 
                samisk=False):
 
     """
+    Returnerer fylkesnavn som string, liste, pandas-kolonne eller ordbok, avhengig av hva som er input.
     fylkesnavn() -> ordbok der fylkesnumrene er keys og navnene values
     fylkesnavn('03') -> 'Oslo'
     fylkesnavn(['0101', '3001']) -> ['Østfold', 'Viken'] 
@@ -171,6 +172,7 @@ def fylkesnavn(fylke=None, # fylkesnummer (evt. kommunenr) som string, tall, lis
     """
     
     fylker = fylker_fra_api(aar, navn=True, samisk=samisk)
+    
     fylkesordbok = {fylknr: fylknavn for fylknr, fylknavn in zip(fylker.FYLKE, fylker.NAVN)}
     
     if fylke is None:
@@ -195,11 +197,12 @@ def fylkesnavn(fylke=None, # fylkesnummer (evt. kommunenr) som string, tall, lis
                 return fylkesordbok[fylke]
             
             # hvis feil format (tall og ikke ledende 0)
-            if len(str(fylke))<=2:
+            if len(str(fylke))<2:
                 try:
                     fylknr = str(int(fylke)).zfill(2)
                     if fylknr in fylkesordbok:
                         return fylkesordbok[fylknr]
+                # try/except her fordi int() feiler når man oppgir kommunenavn
                 except ValueError:
                     pass
                 
@@ -216,7 +219,7 @@ def fylkesnavn(fylke=None, # fylkesnummer (evt. kommunenr) som string, tall, lis
             if str(fylke).capitalize() in kommnavn_til_fylknavn(aar, samisk):
                 return kommnavn_til_fylknavn(aar, samisk)[str(fylke).capitalize()]
             
-            if aar is not None:
+            if aar:
                 raise ValueError(f"Fant ikke fylket '{fylke}' i {aar}")
         
             aar2 = int(aar2)-1
@@ -226,15 +229,15 @@ def fylkesnavn(fylke=None, # fylkesnummer (evt. kommunenr) som string, tall, lis
             except Exception:
                 raise ValueError("Finner ikke fylkesnumret du oppga")
             
+            # fjerner her samisk navn
             fylkesordbok = {fylknr: fylknavn.split(" - ")[0].strip(" ") for fylknr, fylknavn in zip(fylker.FYLKE, fylker.NAVN)}
-                                 
-     
-    if isinstance(fylke, pd.Series):
-        return fylke.map(lambda x: finn_fylknavn(x, fylkesordbok, aar))
-       
+                                    
     if isinstance(fylke, str) or isinstance(fylke, int):
         return finn_fylknavn(fylke, fylkesordbok, aar)
         
+    elif isinstance(fylke, pd.Series):
+        return fylke.map(lambda x: finn_fylknavn(x, fylkesordbok, aar))
+    
     elif isinstance(fylke, list) or isinstance(fylke, tuple):
         return [finn_fylknavn(f, fylkesordbok, aar) for f in fylke]
     
@@ -242,11 +245,11 @@ def fylkesnavn(fylke=None, # fylkesnummer (evt. kommunenr) som string, tall, lis
         raise ValueError("'fylke' må være str, int, float, liste, tuple eller pd.Series")
 
 
-# returnerer kommunenummer som string, liste eller ordbok, avhengig av hva som er input
-def kommunenummer(kommune=None, # kommunenavn som string, tall, liste eller tuple
+def kommunenummer(kommune=None,
            aar = None):
 
     """
+    Returnerer kommunenummer som string, liste eller ordbok, avhengig av hva som er input
     kommunenummer() -> ordbok der kommunenavnene er keys og numrene values
     kommunenummer('oslo') -> '0301'
     kommunenummer(["andebu", "sandefjord"]) -> ['0719', '3804']
@@ -299,12 +302,12 @@ def kommunenummer(kommune=None, # kommunenavn som string, tall, liste eller tupl
         raise ValueError("'kommune' må være str, liste, tuple eller pd.Series")
 
 
-# returnerer fylkesnummer som string, liste eller ordbok, avhengig av hva som er input
 def fylkesnummer(fylke=None, # fylkesnavn som string, tall, liste eller tuple
                  aar = None, 
                  samisk=False):
 
     """
+    Returnerer fylkesnummer som string, liste eller ordbok, avhengig av hva som er input
     fylkesnummer() -> ordbok der fylkesnavnene er keys og numrene values
     fylkesnummer('Oslo') -> '03'
     fylkesnummer(["andebu", "sandefjord"]) -> ['07', '38']
