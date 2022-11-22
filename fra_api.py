@@ -34,7 +34,7 @@ def kommuner_fra_api(aar=None,
         if "9999" in out:
             out.remove("9999")
 
-    if utvalg is not None:
+    if utvalg:
         if navn:
             out = out.sample(utvalg)
         else:
@@ -79,7 +79,7 @@ def fylker_fra_api(aar=None,
         if "99" in out:
             out.remove("99")
 
-    if utvalg is not None:
+    if utvalg:
         if navn:
             out = out.sample(utvalg)
         else:
@@ -125,7 +125,7 @@ def kommunenavn(kommune=None,
             if kommune in kommuneordbok:
                 return kommuneordbok[kommune]
             
-            if aar is not None:
+            if aar:
                 raise ValueError(f"Fant ikke kommunen '{kommune}' i {aar}")
             
             aar2 = int(aar2)-1
@@ -280,7 +280,7 @@ def kommunenummer(kommune=None,
             if kommune in kommuneordbok:
                 return kommuneordbok[kommune]
 
-            if aar is not None:
+            if aar:
                 raise ValueError(f"Fant ikke kommunen '{kommune}' i {aar}")
             
             aar2 = int(aar2)-1
@@ -344,7 +344,7 @@ def fylkesnummer(fylke=None, # fylkesnavn som string, tall, liste eller tuple
             except Exception:
                 raise ValueError(f"Finner ikke fylket '{fylke}'")
 
-            if aar is not None:
+            if aar:
                 raise ValueError(f"Finner ikke fylket '{fylke}' i {aar}")
 
             aar2 = int(aar2)-1
