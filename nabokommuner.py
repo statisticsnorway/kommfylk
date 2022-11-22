@@ -23,7 +23,9 @@ def nabokommuner(kommune=None,
         import datetime
         aar = str(datetime.datetime.now().year)
         
-    abas = les_geoparquet(r"C:\ESTP\Data\ESTP\Day1\Municipalities_2017.shp")
+    abas = gpd.read_file(r"C:\Users\ort\OneDrive - Statistisk sentralbyrå\data\Basisdata_0000_Norge_25833_Kommuner_FGDB.gdb", 
+                         layer="kommune")
+    abas["KOMMUNENR"] = abas.kommunenummer
 
     if kommune is not None:
         
