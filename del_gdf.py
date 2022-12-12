@@ -1,5 +1,5 @@
 import geopandas as gpd
-
+import pandas as pd
 
 def les_geoparquet(sti):
 #    import dapla as dp
@@ -9,8 +9,9 @@ def les_geoparquet(sti):
 # deler en geodataframe i kommuner for et gitt år med intersection.
 # hvis kolonnen KOMMUNENR finnes fra før, endres navnet til KOMMUNENR_opprinnelig.
 def del_i_kommuner(gdf: gpd.GeoDataFrame, 
-                   aar=None, 
-                   intersect=True
+                   aar=None, *,
+                   intersect=True,
+                   loop: int = None
                    ) -> gpd.GeoDataFrame:
 
     if aar is None:
@@ -23,21 +24,34 @@ def del_i_kommuner(gdf: gpd.GeoDataFrame,
     
     abas = abas[["KOMMUNENR", "geometry"]]
     
-    if "KOMMUNENR" in gdf.columns:
-        gdf = gdf.rename(columns = {'KOMMUNENR':'KOMMUNENR_opprinnelig'})
-
-    if intersect:
-        out = gdf.overlay(abas, how="intersection", keep_geom_type=True)
+    gdf2 = gdf.drop("KOMMUNENR", axis=1, errors="ignore")
+    gdf2 = gdf2.loc[:, ~gdf2.columns.str.contains("index|level_")]
+    
+    if loop:
+#        for i in loop:
+        delt = pd.DataFrame()
+        for i, kommnr in enumerate(abas.KOMMUNENR.unique()):
+            abas_komm = abas[abas.KOMMUNENR==kommnr]
+            if intersect:
+                delt_komm = gdf2.overlay(abas_komm, how="intersection", keep_geom_type=True)
+            else:
+                delt_komm = gdf2.sjoin(abas_komm)
+            delt = gpd.GeoDataFrame(pd.concat([delt, delt_komm], axis=0, ignore_index=True), geometry="geometry", crs=gdf.crs)
+            print(f"Ferdig med {i+1} av {len(abas)}", end="\r")
     else:
-        out = gdf.sjoin(abas)
+        if intersect:
+            delt = gdf2.overlay(abas, how="intersection", keep_geom_type=True)
+        else:
+            delt = gdf2.sjoin(abas)
+        
+    delt = delt.reset_index(drop=True)
+    delt = delt.loc[:, ~delt.columns.str.contains("index|level_")]
 
     #fjern tomme geometrier
-    til_fjerning = [i for i in out.index
-                    if out[out.index==i].geometry.values[0] is None
-                    or out[out.index==i].geometry.is_empty[i]]
-    out = out[~out.index.isin(til_fjerning)]
+    delt = delt[~delt.geometry.is_empty]
+    delt = delt.dropna(subset = ["geometry"])
             
-    return out.reset_index(drop=True)
+    return delt
 
 
 #samme for fylker
@@ -55,15 +69,20 @@ def del_i_fylker(gdf: gpd.GeoDataFrame,
     abas["FYLKE"] = abas.fylkesnummer
     
     abas = abas[["FYLKE", "geometry"]]
-    if "FYLKE" in gdf.columns:
-        gdf = gdf.rename(columns = {'FYLKE':'FYLKE_opprinnelig'})
+    
+    gdf2 = gdf.drop("FYLKE", axis=1, errors="ignore")
+    gdf2 = gdf2.loc[:, ~gdf2.columns.str.contains("index|level_")]
+
     if intersect:
-        out = gdf.overlay(abas, how="intersection", keep_geom_type=True)
+        delt = gdf2.overlay(abas, how="intersection", keep_geom_type=True)
     else:
-        out = gdf.sjoin(abas)
+        delt = gdf2.sjoin(abas)
+    
+    delt = delt.reset_index(drop=True)
+    delt = delt.loc[:, ~delt.columns.str.contains("index|level_")]
+
     #fjern tomme geometrier
-    til_fjerning = [i for i in out.index
-                    if out[out.index==i].geometry.values[0] is None
-                    or out[out.index==i].geometry.is_empty[i]]
-    out = out[~out.index.isin(til_fjerning)]
-    return out.reset_index(drop=True)
+    delt = delt[~delt.geometry.is_empty]
+    delt = delt.dropna(subset = ["geometry"])
+    
+    return delt
