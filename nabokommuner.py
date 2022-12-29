@@ -2,15 +2,11 @@ import geopandas as gpd
 
 
 # TODO: legg ut kommunedata på dapla 
-
-
 def les_geoparquet(sti):
-#    import dapla as dp
-    return gpd.read_file(sti)
+    pass
 
 
-
-def nabokommuner(kommune=None, 
+def nabokommuner(kommune=None,
                  aar=None):
     
     """
